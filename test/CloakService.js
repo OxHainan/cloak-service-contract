@@ -13,8 +13,8 @@ contract('CloakService', accounts => {
     it('Test basic function', async () => {
         cs = await quickSample();
         // Test set and get tee address
-        const addr = await cs.teeAddr();
-        assert.equal(addr, accounts[0]);
+        const teeAddrExist = await cs.teeAddrs(accounts[0]);
+        assert.equal(teeAddrExist, true);
 
         // Check whether user has registered successfully
         const pubKey = getPublicKey(web3.utils.keccak256(accounts[2]));
