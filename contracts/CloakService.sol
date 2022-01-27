@@ -7,7 +7,7 @@ import "./Deposit.sol";
 contract CloakService is Deposit{
     using SafeMath for uint256;
     using Address for address;
-    enum TxStatus {UNCOMMIT, SETTLE, ABORT, COMPELETE, TIMEOUT}
+    enum TxStatus {UNCOMMIT, SETTLE, ABORT, COMPELETE, TIMEOUT, COMMIT}
 
     struct Proposal {
         bool isValid;
@@ -26,7 +26,7 @@ contract CloakService is Deposit{
         mapping(address => uint256) partyIndex;
     }
 
-    address public teeAddr;
+    mapping(address => bool) public teeAddrs;
     mapping(address => bytes) public pks;
     mapping(address => bool) hasAnnounced;
     address public manager;
@@ -36,7 +36,7 @@ contract CloakService is Deposit{
 
     constructor(address _manager, bytes memory pk) {
         manager = _manager;
-        teeAddr = msg.sender;
+        teeAddrs[msg.sender] = true;
         maxBlockNumber4Response = 3;
         maxBlockNumber4Compete = 3;
         announcePk(pk);
@@ -54,12 +54,12 @@ contract CloakService is Deposit{
     }
 
     function setTEEAddress(address _teeAddr, bytes memory pk) public onlyManager {
-        teeAddr = _teeAddr;
+        teeAddrs[_teeAddr] = true;
         announcePk(pk);
     }
     
     modifier onlyTEE() {
-        require(msg.sender == teeAddr, "Require tee caller");
+        require(teeAddrs[msg.sender], "Require tee caller");
         _;
     }
 
@@ -109,11 +109,18 @@ contract CloakService is Deposit{
         prpl.status = TxStatus.SETTLE;
     }
 
-    function complete(uint256 txId, bytes memory data, bytes memory returnCommit) onlyTEE existTx(txId) external {
+    function commit(uint256 txId, bytes memory data, bytes memory returnCommit) onlyTEE existTx(txId) external {
         Proposal storage prpl = prpls[txId];
         require(prpl.status == TxStatus.SETTLE, "Require SETTLE tansaction status");
         prpl.verifiedContractAddr.functionCall(data);
         prpl.returnCommit = returnCommit;
+        prpl.status = TxStatus.COMMIT;
+    }
+
+    function complete(uint256 txId, bytes memory data) onlyTEE existTx(txId) external {
+        Proposal storage prpl = prpls[txId];
+        require(prpl.status == TxStatus.COMMIT, "Require COMMIT tansaction status");
+        prpl.verifiedContractAddr.functionCall(data);
         unfreeze(manager, prpl.deposit);
         unfreeze(prpl.partyAddrs, prpl.deposit);
         prpl.status = TxStatus.COMPELETE;
