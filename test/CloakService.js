@@ -39,7 +39,7 @@ contract('CloakService', accounts => {
         const txId = 101;
         const verifiedContractAddr = userContractAddr;
         const parties = [accounts[2], accounts[3], accounts[4]];
-        const inputHash = [web3.utils.sha3("input1"), web3.utils.sha3("input2"),  web3.utils.sha3("input3")];
+        const inputHash = [web3.utils.sha3("input1"), web3.utils.sha3("input2"), web3.utils.sha3("input3")];
         const txDeposit = 100;
         await cs.propose(txId, verifiedContractAddr, parties, inputHash, txDeposit);
         prpl = await cs.prpls(txId);
@@ -163,5 +163,4 @@ contract('CloakService', accounts => {
 
         return cs;
     }
-
 });

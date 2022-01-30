@@ -15,13 +15,13 @@ contract Deposit {
     }
 
     function withdrawl(uint256 amount) external {
-        require(available[msg.sender] > amount);
+        require(available[msg.sender] >= amount, "Available balance is not enough");
         available[msg.sender] = available[msg.sender].sub(amount);
         Address.sendValue(payable(msg.sender), amount);
     }
 
     function freeze(address party, uint256 amount) internal {
-            require(available[party] >= amount, "Require amount larger than avaiable");
+            require(available[party] >= amount, "Require amount larger than available");
             available[party] = available[party].sub(amount);
             frozen[party] = frozen[party].add(amount);
     }
@@ -33,7 +33,6 @@ contract Deposit {
     }
 
     function clearFrozen(address party, uint256 deposit) internal {
-        require(deposit > 0, "Require deposit larger than 0");
         require(frozen[party] >= deposit, "Require frozen larger than deposit");
         frozen[party] = frozen[party].sub(deposit);
     }
@@ -45,7 +44,7 @@ contract Deposit {
     }
 
     function compensate(address[] memory beneficiaries, uint256 misbehavedNum, uint256 deposit) internal {
-        require(beneficiaries.length > 0 && deposit >= 0, "Input unvalid");
+        require(beneficiaries.length > 0, "Input unvalid");
         uint256 compensation = deposit.mul(misbehavedNum).div(beneficiaries.length);
         require(compensation >= 0);
         for (uint256 i; i < beneficiaries.length; i++) {
@@ -54,14 +53,12 @@ contract Deposit {
     }
 
     function unfreeze(address party, uint256 deposit) internal {
-        require(deposit >= 0, "Require deposit larger than 0");
         require(frozen[party] >= deposit, "Require frozen larger than deposit");
         frozen[party] = frozen[party].sub(deposit);
         available[party] = available[party].add(deposit);
     }
 
     function unfreeze(address[] memory parties, uint256 deposit) internal {
-        require(deposit >= 0, "Require deposit larger than 0");
         for (uint256 i; i < parties.length; i++) {
             unfreeze(parties[i], deposit);
         }

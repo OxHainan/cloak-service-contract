@@ -67,6 +67,16 @@ contract CloakService is Deposit{
         require(prpls[txId].isValid, "Require existed transcation");
         _;
     }
+    
+    modifier notExistTx(uint256 txId) {
+        require(!prpls[txId].isValid, "Transcation existed");
+        _;
+    }
+
+    modifier checkTxStatus(uint256 txId, TxStatus status) {
+        require(prpls[txId].status == status, "Transaction status invalid");
+        _;
+    }
 
     function announcePk(bytes memory pk) checkPublicKey(pk) public {
         require(!hasAnnounced[msg.sender], "Address has already announced");
@@ -91,9 +101,8 @@ contract CloakService is Deposit{
     }
 
     function propose(uint256 txId, address verifiedContractAddr, address[] memory partyAddress, 
-            bytes32[] memory inputHash, uint256 deposit) onlyTEE external {
+            bytes32[] memory inputHash, uint256 deposit) onlyTEE notExistTx(txId) external {
         Proposal storage prpl = prpls[txId];
-        require(!prpl.isValid, "txId exist");
         freeze(manager, deposit);
         freeze(partyAddress, deposit);
         prpl.isValid = true;
@@ -103,15 +112,13 @@ contract CloakService is Deposit{
             prpl.partyInputHash.push(inputHash[i]);
             prpl.partyIndex[partyAddress[i]] = i;
         }
-
         prpl.deposit = deposit;
         prpl.initBlockNumber = block.number;
         prpl.status = TxStatus.SETTLE;
     }
 
-    function complete(uint256 txId, bytes memory data, bytes memory returnCommit) onlyTEE existTx(txId) external {
+    function complete(uint256 txId, bytes memory data, bytes memory returnCommit) onlyTEE existTx(txId) checkTxStatus(txId, TxStatus.SETTLE) external {
         Proposal storage prpl = prpls[txId];
-        require(prpl.status == TxStatus.SETTLE, "Require SETTLE tansaction status");
         prpl.verifiedContractAddr.functionCall(data);
         prpl.returnCommit = returnCommit;
         unfreeze(manager, prpl.deposit);
@@ -119,9 +126,8 @@ contract CloakService is Deposit{
         prpl.status = TxStatus.COMPELETE;
     }
 
-    function challenge(uint256 txId, address[] memory misbehavedPartyAddrs) onlyTEE existTx(txId) external {
+    function challenge(uint256 txId, address[] memory misbehavedPartyAddrs) onlyTEE existTx(txId) checkTxStatus(txId, TxStatus.SETTLE) external {
         Proposal storage prpl = prpls[txId];
-        require(prpl.status == TxStatus.SETTLE, "Require SETTLE tansaction status");
         for (uint256 i; i < misbehavedPartyAddrs.length; i++) {
             require(misbehavedPartyAddrs[i] != manager, "Challenge manager is not allowed");
             require(prpl.partyAddrs[prpl.partyIndex[misbehavedPartyAddrs[i]]] == misbehavedPartyAddrs[i], "Require existed party");
@@ -134,9 +140,8 @@ contract CloakService is Deposit{
         bytes indexed input
     );
 
-    function response(uint256 txId, bytes memory input) existTx(txId) external {
+    function response(uint256 txId, bytes memory input) existTx(txId) checkTxStatus(txId, TxStatus.SETTLE) external {
         Proposal storage prpl = prpls[txId];
-        require(prpl.status == TxStatus.SETTLE, "Require SETTLE tansaction status");
         require(prpl.partyChallenged[msg.sender], "Require challenged");
         bytes32  inputHash = prpl.partyInputHash[prpl.partyIndex[msg.sender]];
         require(inputHash == keccak256(input), "Require same input hash");
@@ -144,12 +149,11 @@ contract CloakService is Deposit{
         emit Response(txId, input);
     }
 
-    function punish(uint256 txId, address[] memory misbehavedPartyAddrs) onlyTEE existTx(txId) external {
+    function punish(uint256 txId, address[] memory misbehavedPartyAddrs) onlyTEE existTx(txId) checkTxStatus(txId, TxStatus.SETTLE) external {
         Proposal storage prpl = prpls[txId];
         uint256 beneficiaryLen = prpl.partyAddrs.length.sub(misbehavedPartyAddrs.length).add(1);
         require(beneficiaryLen >= 1 , "Invalid beneficiaryLen");
         require(block.number > prpl.initBlockNumber.add(maxBlockNumber4Response), "Require enough block number");
-        require(prpl.status == TxStatus.SETTLE, "Require SETTLE tansaction status");
         address[] memory beneficiaries = new address[](beneficiaryLen);
         uint256 b = 0;
         for (uint256 i; i < prpl.partyAddrs.length; i++) {
@@ -172,9 +176,8 @@ contract CloakService is Deposit{
         prpl.status = TxStatus.ABORT;
     }
 
-    function timeout(uint256 txId) existTx(txId) external {
+    function timeout(uint256 txId) existTx(txId) checkTxStatus(txId, TxStatus.SETTLE) external {
         Proposal storage prpl = prpls[txId];
-        require(prpl.status == TxStatus.SETTLE, "Require SETTLE tansaction status");
         require(block.number > prpl.initBlockNumber.add(maxBlockNumber4Compete), "Require enough block number");
         clearFrozen(manager, prpl.deposit);
         compensate(prpl.partyAddrs, 1, prpl.deposit);
