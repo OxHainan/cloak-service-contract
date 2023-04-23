@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/utils/Create2.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./Deposit.sol";
 
-contract DeCloakService is Deposit {
+contract CloakService is Deposit {
     using SafeMath for uint256;
     using Address for address;
     enum TxStatus {
@@ -34,7 +34,7 @@ contract DeCloakService is Deposit {
 
     constructor(address _manager, bytes memory pk) {
         manager = _manager;
-        teeAddrList[0] = msg.sender;
+        teeAddrList.push(msg.sender);
         maxBlockNumber4Comp = 3;
         announcePk(pk);
     }
@@ -114,12 +114,9 @@ contract DeCloakService is Deposit {
         uint256 maxBlockNumber4Nego,
         address verifiedContractAddr
     ) external notExistTx(txId) {
-        require(
-            block.number <= maxBlockNumber4Nego,
-            "Require enough block number"
-        );
         require(deposit > 0, "require deposit larger than 0");
         Proposal storage prpl = prpls[txId];
+        prpl.isValid = true;
         prpl.deposit = deposit;
         prpl.maxBlockNumber4Nego = maxBlockNumber4Nego;
         prpl.maxBlockNumber4Comp = maxBlockNumber4Comp;
