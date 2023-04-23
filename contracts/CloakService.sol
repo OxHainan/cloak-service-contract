@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/utils/Create2.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./Deposit.sol";
 
-contract CloakService is Deposit {
+contract DeCloakService is Deposit {
     using SafeMath for uint256;
     using Address for address;
     enum TxStatus {
@@ -21,8 +21,8 @@ contract CloakService is Deposit {
         address verifiedContractAddr;
         uint256 deposit;
         address teeAddr;
-        uint256 maxBlockNumber4Negotiation;
-        uint256 maxBlockNumber4Compete;
+        uint256 maxBlockNumber4Nego;
+        uint256 maxBlockNumber4Comp;
     }
 
     address[] public teeAddrList;
@@ -30,12 +30,12 @@ contract CloakService is Deposit {
     mapping(address => bool) hasAnnounced;
     address public manager;
     mapping(uint256 => Proposal) public prpls;
-    uint256 maxBlockNumber4Compete;
+    uint256 maxBlockNumber4Comp;
 
     constructor(address _manager, bytes memory pk) {
         manager = _manager;
         teeAddrList[0] = msg.sender;
-        maxBlockNumber4Compete = 3;
+        maxBlockNumber4Comp = 3;
         announcePk(pk);
     }
 
@@ -73,6 +73,17 @@ contract CloakService is Deposit {
         _;
     }
 
+    modifier txNotClosed(uint256 txId) {
+        Proposal memory prpl = prpls[txId];
+        require(
+            prpl.status != TxStatus.NEGOFAILED &&
+            prpl.status != TxStatus.ABORTED &&
+            prpl.status != TxStatus.COMPLETED,
+            "Require status NEGOFAILED, ABORTED or COMPLETED"
+        );
+        _;
+    }
+
     function announcePk(bytes memory pk) public checkPublicKey(pk) {
         require(!hasAnnounced[msg.sender], "Address has already announced");
         pks[msg.sender] = pk;
@@ -80,7 +91,7 @@ contract CloakService is Deposit {
     }
 
     function getPk(
-        address[] memory addrs
+        address[] calldata addrs
     ) public view returns (bytes[] memory) {
         bytes[] memory res = new bytes[](addrs.length);
         for (uint i = 0; i < addrs.length; i++) {
@@ -91,7 +102,7 @@ contract CloakService is Deposit {
     }
 
     event Deploy(address indexed addr);
-    function deploy(bytes memory bytecode) public {
+    function deploy(bytes calldata bytecode) public {
         bytes32 salt = keccak256(abi.encodePacked(address(this), msg.sender));
         address addr = Create2.deploy(0, salt, bytecode);
         emit Deploy(addr);
@@ -100,26 +111,34 @@ contract CloakService is Deposit {
     function challengeTEE(
         uint256 txId, 
         uint256 deposit,
-        uint256 maxBlockNumber4Negotiation
+        uint256 maxBlockNumber4Nego,
+        address verifiedContractAddr
     ) external notExistTx(txId) {
         require(
-            block.number <= maxBlockNumber4Negotiation,
+            block.number <= maxBlockNumber4Nego,
             "Require enough block number"
         );
+        require(deposit > 0, "require deposit larger than 0");
         Proposal storage prpl = prpls[txId];
         prpl.deposit = deposit;
-        prpl.maxBlockNumber4Negotiation = maxBlockNumber4Negotiation;
-        prpl.maxBlockNumber4Compete = maxBlockNumber4Compete;
+        prpl.maxBlockNumber4Nego = maxBlockNumber4Nego;
+        prpl.maxBlockNumber4Comp = maxBlockNumber4Comp;
         prpl.teeAddr = teeAddrList[0];
+        prpl.verifiedContractAddr = verifiedContractAddr;
         prpl.status = TxStatus.PROPOSED;
     }
 
     event Acknowledge(uint256 txId, bytes ack, address party);
-    function acknowledge(uint256 txId, bytes memory ack) external {
+    function acknowledge(
+        uint256 txId,
+        bytes calldata ack
+    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
         emit Acknowledge(txId, ack, msg.sender);
     }
 
-    function failNegotiation(uint256 txId) external {
+    function failNegotiation(
+        uint256 txId
+    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
         Proposal storage prpl = prpls[txId];
         require(msg.sender == prpl.teeAddr, "Require tee caller");
         prpl.status = TxStatus.NEGOFAILED;
@@ -128,53 +147,53 @@ contract CloakService is Deposit {
     event ChallengeParties(uint256 txId, address[] misbehavedPartyAddrs);
     function challengeParties(
         uint256 txId,
-        address[] memory misbehavedPartyAddrs
-    ) external {
+        address[] calldata misbehavedPartyAddrs
+    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
         require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
         emit ChallengeParties(txId, misbehavedPartyAddrs);
     }
 
-    event PartyResponse(uint256 txId, bytes[] input, bytes[] signature, address party);
+    event PartyResponse(uint256 txId, bytes[] input, address party);
     function partyResponse(
         uint256 txId,
-        bytes[] memory input,
-        bytes[] memory signature
-    ) external existTx(txId) {
-        emit PartyResponse(txId, input, signature, msg.sender);
+        bytes[] calldata input
+    ) external existTx(txId) checkTxStatus(txId, TxStatus.PROPOSED) {
+        emit PartyResponse(txId, input, msg.sender);
     }
 
     function punishParties(
         uint256 txId,
-        address[] memory misbehavedPartyAddrs
-    ) external {
+        address[] calldata misbehavedPartyAddrs
+    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
         Proposal storage prpl = prpls[txId];
         require(msg.sender == prpl.teeAddr, "Require tee caller");
         deduct(misbehavedPartyAddrs, prpl.deposit);
         prpl.status = TxStatus.ABORTED;
     }
 
-    function punishTEE(uint256 txId) external existTx(txId) {
+    function punishTEE(
+        uint256 txId
+    ) external existTx(txId) txNotClosed(txId) txNotClosed(txId) {
         Proposal storage prpl = prpls[txId];
         require(
-            block.number > prpl.maxBlockNumber4Negotiation.add(prpl.maxBlockNumber4Compete),
+            block.number > prpl.maxBlockNumber4Nego.add(prpl.maxBlockNumber4Comp),
             "Require enough block number"
-        );
-        require(
-            prpl.status != TxStatus.NEGOFAILED &&
-            prpl.status != TxStatus.ABORTED &&
-            prpl.status != TxStatus.COMPLETED 
         );
         deduct(teeAddrList[0], prpl.deposit);
         prpl.status = TxStatus.ABORTED;
     }
 
-    function commit(uint256 txId, bytes memory data) existTx(txId) external {
+    function commit(
+        uint256 txId, bytes calldata data
+    ) existTx(txId) txNotClosed(txId) external {
         Proposal storage prpl = prpls[txId];
         require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
         prpl.verifiedContractAddr.functionCall(data);
     }
 
-    function complete(uint256 txId, bytes memory data) existTx(txId) external {
+    function complete(
+        uint256 txId, bytes calldata data
+    ) existTx(txId) txNotClosed(txId) external {
         Proposal storage prpl = prpls[txId];
         require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
         prpl.verifiedContractAddr.functionCall(data);
