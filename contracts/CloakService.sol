@@ -79,7 +79,7 @@ contract CloakService is Deposit {
             prpl.status != TxStatus.NEGOFAILED &&
             prpl.status != TxStatus.ABORTED &&
             prpl.status != TxStatus.COMPLETED,
-            "Require status NEGOFAILED, ABORTED or COMPLETED"
+            "Require status not in NEGOFAILED, ABORTED or COMPLETED"
         );
         _;
     }
@@ -129,13 +129,13 @@ contract CloakService is Deposit {
     function acknowledge(
         uint256 txId,
         bytes calldata ack
-    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
+    ) external existTx(txId) checkTxStatus(txId, TxStatus.PROPOSED) {
         emit Acknowledge(txId, ack, msg.sender);
     }
 
     function failNegotiation(
         uint256 txId
-    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
+    ) external existTx(txId) checkTxStatus(txId, TxStatus.PROPOSED) {
         Proposal storage prpl = prpls[txId];
         require(msg.sender == prpl.teeAddr, "Require tee caller");
         prpl.status = TxStatus.NEGOFAILED;
@@ -145,7 +145,7 @@ contract CloakService is Deposit {
     function challengeParties(
         uint256 txId,
         address[] calldata misbehavedPartyAddrs
-    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
+    ) external existTx(txId) txNotClosed(txId) {
         require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
         emit ChallengeParties(txId, misbehavedPartyAddrs);
     }
@@ -154,14 +154,14 @@ contract CloakService is Deposit {
     function partyResponse(
         uint256 txId,
         bytes[] calldata input
-    ) external existTx(txId) checkTxStatus(txId, TxStatus.PROPOSED) {
+    ) external existTx(txId)  txNotClosed(txId) {
         emit PartyResponse(txId, input, msg.sender);
     }
 
     function punishParties(
         uint256 txId,
         address[] calldata misbehavedPartyAddrs
-    ) external checkTxStatus(txId, TxStatus.PROPOSED) {
+    ) external existTx(txId) txNotClosed(txId) {
         Proposal storage prpl = prpls[txId];
         require(msg.sender == prpl.teeAddr, "Require tee caller");
         deduct(misbehavedPartyAddrs, prpl.deposit);
