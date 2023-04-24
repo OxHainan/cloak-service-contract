@@ -50,6 +50,12 @@ contract CloakService is Deposit {
         _;
     }
 
+    modifier onlyTee(uint256 txId) {
+        require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
+        _;
+    }
+
+
     function setTEEAddress(
         address teeAddr,
         bytes memory pk
@@ -135,9 +141,8 @@ contract CloakService is Deposit {
 
     function failNegotiation(
         uint256 txId
-    ) external existTx(txId) checkTxStatus(txId, TxStatus.PROPOSED) {
+    ) external existTx(txId) checkTxStatus(txId, TxStatus.PROPOSED) onlyTee(txId) {
         Proposal storage prpl = prpls[txId];
-        require(msg.sender == prpl.teeAddr, "Require tee caller");
         prpl.status = TxStatus.NEGOFAILED;
     }
 
@@ -145,8 +150,7 @@ contract CloakService is Deposit {
     function challengeParties(
         uint256 txId,
         address[] calldata misbehavedPartyAddrs
-    ) external existTx(txId) txNotClosed(txId) {
-        require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
+    ) external existTx(txId) txNotClosed(txId) onlyTee(txId) {
         emit ChallengeParties(txId, misbehavedPartyAddrs);
     }
 
@@ -161,9 +165,8 @@ contract CloakService is Deposit {
     function punishParties(
         uint256 txId,
         address[] calldata misbehavedPartyAddrs
-    ) external existTx(txId) txNotClosed(txId) {
+    ) external existTx(txId) txNotClosed(txId) onlyTee(txId) {
         Proposal storage prpl = prpls[txId];
-        require(msg.sender == prpl.teeAddr, "Require tee caller");
         deduct(misbehavedPartyAddrs, prpl.deposit);
         prpl.status = TxStatus.ABORTED;
     }
@@ -181,18 +184,17 @@ contract CloakService is Deposit {
     }
 
     function commit(
-        uint256 txId, bytes calldata data
-    ) existTx(txId) txNotClosed(txId) external {
+        uint256 txId, bytes calldata verifyData, bytes calldata setData
+    ) external existTx(txId) txNotClosed(txId) onlyTee(txId) {
         Proposal storage prpl = prpls[txId];
-        require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
-        prpl.verifiedContractAddr.functionCall(data);
+        prpl.verifiedContractAddr.functionCall(verifyData);
+        prpl.verifiedContractAddr.functionCall(setData);
     }
 
     function complete(
         uint256 txId, bytes calldata data
-    ) existTx(txId) txNotClosed(txId) external {
+    ) external existTx(txId) txNotClosed(txId) onlyTee(txId) {
         Proposal storage prpl = prpls[txId];
-        require(msg.sender == prpls[txId].teeAddr, "Require tee caller");
         prpl.verifiedContractAddr.functionCall(data);
         prpl.status = TxStatus.COMPLETED;
     }
