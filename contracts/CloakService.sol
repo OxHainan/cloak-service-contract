@@ -19,6 +19,7 @@ contract CloakService is Deposit {
         bool isValid;
         TxStatus status;
         address verifiedContractAddr;
+        bytes32 statesHash;
         uint256 deposit;
         address teeAddr;
         uint256 maxBlockNumber4Nego;
@@ -134,7 +135,7 @@ contract CloakService is Deposit {
     event Acknowledge(uint256 txId, bytes ack, address party);
     function acknowledge(
         uint256 txId,
-        bytes calldata ack
+        bytes memory ack
     ) external existTx(txId) checkTxStatus(txId, TxStatus.PROPOSED) {
         emit Acknowledge(txId, ack, msg.sender);
     }
@@ -164,7 +165,7 @@ contract CloakService is Deposit {
 
     function punishParties(
         uint256 txId,
-        address[] calldata misbehavedPartyAddrs
+        address[] memory misbehavedPartyAddrs
     ) external existTx(txId) txNotClosed(txId) onlyTee(txId) {
         Proposal storage prpl = prpls[txId];
         deduct(misbehavedPartyAddrs, prpl.deposit);
@@ -183,19 +184,22 @@ contract CloakService is Deposit {
         prpl.status = TxStatus.ABORTED;
     }
 
+    event Commit(uint256 txId, bytes[] newStates, bytes32 oldStatesHash);
     function commit(
-        uint256 txId, bytes calldata verifyData, bytes calldata setData
+        uint256 txId, bytes[] calldata newStates, bytes32 oldStatesHash
     ) external existTx(txId) txNotClosed(txId) onlyTee(txId) {
         Proposal storage prpl = prpls[txId];
-        prpl.verifiedContractAddr.functionCall(verifyData);
-        prpl.verifiedContractAddr.functionCall(setData);
+        require(prpl.statesHash == oldStatesHash, "Require same old state hash");
+        emit Commit(txId, newStates, oldStatesHash);
     }
 
+    event Complete(uint256 txId, bytes[] newStates, bytes32 newStatesHash);
     function complete(
-        uint256 txId, bytes calldata data
+        uint256 txId, bytes[] calldata newStates, bytes32 newStatesHash
     ) external existTx(txId) txNotClosed(txId) onlyTee(txId) {
         Proposal storage prpl = prpls[txId];
-        prpl.verifiedContractAddr.functionCall(data);
+        prpl.statesHash = newStatesHash;
         prpl.status = TxStatus.COMPLETED;
+        emit Complete(txId, newStates, newStatesHash);
     }
 }
