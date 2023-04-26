@@ -91,139 +91,251 @@ function writeData(data) {
 
 async function process() {
     let service = await deploy("../build/contracts/CloakService.json", [user.address, getPublicKey(tee.privateKey)], tee.privateKey)
-    console.log(service._address)
+    console.log(user.address)
+    console.log(getPublicKey(tee.privateKey))
+    let userContract = await deploy("../build/contracts/Scores.json", [100, 100], tee.privateKey)
+    console.log(userContract._address)
     let accounts = await generate_parties();
 
     const id_index = 1;
     // console.log(accounts)
 
-    for (let i = 1; i <= 11; i++) {
+    for (let i = 1; i <= 1; i++) {
         let cha_acc = new Array(i);
         for (let j = 0; j < i; j++) {
+            // save address
             cha_acc[j] = accounts[j].address;
-        }
-        // propose
-        {
-
+            // deposit
             await send(service._address,
-                service.methods.propose(id_index + i, cha_acc, 100),
-                tee.privateKey
+                service.methods.deposit(10000),
+                accounts[j].privateKey
             )
-
         }
+        await send(service._address,
+            service.methods.deposit(10000),
+            tee.privateKey
+        )
 
-        // change
+        // Negotiation phase
+        // challengeTEE
         {
             let tx = await send(service._address,
-                service.methods.challenge(id_index + i, cha_acc),
-                tee.privateKey
+                service.methods.challengeTEE(id_index + i, 100, 3, userContract._address),
+                accounts[0].privateKey
             )
-
-            console.log("change gas: ", tx.cumulativeGasUsed)
+            console.log("challengeTEE gas: ", tx.cumulativeGasUsed)
             writeData({
-                "name": "change",
+                "name": "challengeTEE",
                 "n": i,
                 "gasUsed": tx.cumulativeGasUsed
             })
         }
 
-        let acc = new Array(i);
-        for (let j = 0; j < i; j++) {
-            acc[j] = accounts[j];
+        // acknowledge
+        {
+            let tx = await send(service._address,
+                service.methods.acknowledge(id_index + i, "0x00"),
+                accounts[0].privateKey
+            )
+            console.log("acknowledge gas: ", tx.cumulativeGasUsed)
+            writeData({
+                "name": "acknowledge",
+                "n": i,
+                "gasUsed": tx.cumulativeGasUsed
+            })
         }
-        // response
+
+        // failNegotiation
+        {
+            let tx = await send(service._address,
+                service.methods.failNegotiation(id_index + i),
+                tee.privateKey
+            )
+            console.log("failNegotiation gas: ", tx.cumulativeGasUsed)
+            writeData({
+                "name": "failNegotiation",
+                "n": i,
+                "gasUsed": tx.cumulativeGasUsed
+            })
+        }
+
+
+        // Execution phase
+        // challengeTEE
+        {
+            let tx = await send(service._address,
+                service.methods.challengeTEE(100 + id_index + i, 100, 3, userContract._address),
+                accounts[0].privateKey
+            )
+        }
+
+        // challengeParties
+        {
+            let tx = await send(service._address,
+                service.methods.challengeParties(100 + id_index + i, cha_acc),
+                tee.privateKey
+            )
+            console.log("challengeParties gas: ", tx.cumulativeGasUsed)
+            writeData({
+                "name": "challengeParties",
+                "n": i,
+                "gasUsed": tx.cumulativeGasUsed
+            })
+        }
+
+        // partyResponse
         {
             let input = new Array(i);
-            let encrypted = new Array(i);
             for (let j = 0; j < i; j++) {
                 input[j] = create_input(j);
-                encrypted[j] = encryption(acc[j].privateKey, getPublicKey(teeKey), input[j]);
             }
-            for (let j = 0; j < i; j++) {
-
-                let tx = await send(
-                    service._address,
-                    service.methods.response(id_index + i, encrypted[j]),
-                    userKey,
-                )
-                console.log("response gas: ", tx.cumulativeGasUsed)
-
-                writeData({
-                    "name": "response",
-                    "n": i,
-                    "gasUsed": tx.cumulativeGasUsed,
-                    "origin_data": input[j],
-                    "party": acc[j].address,
-                    "encrypted_data": encrypted[j]
-                })
-            }
-        }
-
-        // 聚合相应
-        {
-            let input = new Array(i);
-            let message = new Array(i);
-            let signature = new Array(i);
-            for (let j = 0; j < i; j++) {
-                message[j] = create_input(j);
-                input[j] = encryption(acc[j].privateKey, getPublicKey(teeKey), message[j]);
-                signature[j] = await web3.eth.accounts.sign(input[j], acc[j].privateKey).signature;
-            }
-
-
-            let tx = await send(
-                service._address,
-                service.methods.response(id_index + i, input, signature),
-                userKey
-            )
-
-            console.log("response gas: ", tx.cumulativeGasUsed)
-            let res_party = new Array(i);
-            for (let j = 0; j < i; j++) {
-                res_party[j] = acc[j].address
-            }
-            writeData({
-                "name": "merge-response",
-                "n": i,
-                "gasUsed": tx.cumulativeGasUsed,
-                "origin_data": message,
-                "party": res_party,
-                "encrypted_data": input,
-                "signature": signature
-            })
-
-        }
-
-        // 惩罚
-        {
             let tx = await send(service._address,
-                service.methods.punish(id_index + i, cha_acc),
-                tee.privateKey
+                service.methods.partyResponse(100 + id_index + i, input),
+                accounts[0].privateKey
             )
-
-            console.log("punish gas: ", tx.cumulativeGasUsed)
+            console.log("partyResponse gas: ", tx.cumulativeGasUsed)
             writeData({
-                "name": "punish",
+                "name": "partyResponse",
                 "n": i,
                 "gasUsed": tx.cumulativeGasUsed
             })
         }
 
-        // 惩罚
+        // punishParties
         {
             let tx = await send(service._address,
-                service.methods.timeout(id_index + i),
+                service.methods.punishParties(100 + id_index + i, cha_acc),
                 tee.privateKey
             )
-
-            console.log("timeout gas: ", tx.cumulativeGasUsed)
+            console.log("punishParties gas: ", tx.cumulativeGasUsed)
             writeData({
-                "name": "timeout",
+                "name": "punishParties",
                 "n": i,
                 "gasUsed": tx.cumulativeGasUsed
             })
         }
-    }
+
+        // Deliver phase
+        // challengeTEE
+        {
+            let tx = await send(service._address,
+                service.methods.challengeTEE(200 + id_index + i, 100, 3, userContract._address),
+                accounts[0].privateKey
+            )
+        }
+
+        // punishTEE
+        {
+            let tx = await send(service._address,
+                service.methods.punishTEE(200 + id_index + i),
+                accounts[0].privateKey
+            )
+            console.log("punishTEE gas: ", tx.cumulativeGasUsed)
+            writeData({
+                "name": "punishTEE",
+                "n": i,
+                "gasUsed": tx.cumulativeGasUsed
+            })
+        }
+
+
+        // let acc = new Array(i);
+        // for (let j = 0; j < i; j++) {
+        //     acc[j] = accounts[j];
+        // }
+        // // response
+        // {
+        //     let input = new Array(i);
+        //     let encrypted = new Array(i);
+        //     for (let j = 0; j < i; j++) {
+        //         input[j] = create_input(j);
+        //         encrypted[j] = encryption(acc[j].privateKey, getPublicKey(teeKey), input[j]);
+        //     }
+        //     for (let j = 0; j < i; j++) {
+
+        //         let tx = await send(
+        //             service._address,
+        //             service.methods.response(id_index + i, encrypted[j]),
+        //             userKey,
+        //         )
+        //         console.log("response gas: ", tx.cumulativeGasUsed)
+
+        //         writeData({
+        //             "name": "response",
+        //             "n": i,
+        //             "gasUsed": tx.cumulativeGasUsed,
+        //             "origin_data": input[j],
+        //             "party": acc[j].address,
+        //             "encrypted_data": encrypted[j]
+        //         })
+        //     }
+        // }
+
+        // // 聚合相应
+        // {
+        //     let input = new Array(i);
+        //     let message = new Array(i);
+        //     let signature = new Array(i);
+        //     for (let j = 0; j < i; j++) {
+        //         message[j] = create_input(j);
+        //         input[j] = encryption(acc[j].privateKey, getPublicKey(teeKey), message[j]);
+        //         signature[j] = await web3.eth.accounts.sign(input[j], acc[j].privateKey).signature;
+        //     }
+
+
+        //     let tx = await send(
+        //         service._address,
+        //         service.methods.response(id_index + i, input, signature),
+        //         userKey
+        //     )
+
+        //     console.log("response gas: ", tx.cumulativeGasUsed)
+        //     let res_party = new Array(i);
+        //     for (let j = 0; j < i; j++) {
+        //         res_party[j] = acc[j].address
+        //     }
+        //     writeData({
+        //         "name": "merge-response",
+        //         "n": i,
+        //         "gasUsed": tx.cumulativeGasUsed,
+        //         "origin_data": message,
+        //         "party": res_party,
+        //         "encrypted_data": input,
+        //         "signature": signature
+        //     })
+
+        // }
+
+        // // 惩罚
+        // {
+        //     let tx = await send(service._address,
+        //         service.methods.punish(id_index + i, cha_acc),
+        //         tee.privateKey
+        //     )
+
+        //     console.log("punish gas: ", tx.cumulativeGasUsed)
+        //     writeData({
+        //         "name": "punish",
+        //         "n": i,
+        //         "gasUsed": tx.cumulativeGasUsed
+        //     })
+        // }
+
+        // // 惩罚
+        // {
+        //     let tx = await send(service._address,
+        //         service.methods.timeout(id_index + i),
+        //         tee.privateKey
+        //     )
+
+        //     console.log("timeout gas: ", tx.cumulativeGasUsed)
+        //     writeData({
+        //         "name": "timeout",
+        //         "n": i,
+        //         "gasUsed": tx.cumulativeGasUsed
+        //     })
+        }
+    // }
 
 
 

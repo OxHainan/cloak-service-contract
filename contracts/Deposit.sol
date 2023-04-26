@@ -29,4 +29,9 @@ contract Deposit {
             deduct(parties[i], amount);
         }
     }
+
+    // for test only
+    function deposit(uint256 coin) public {
+        coins[msg.sender] = coin;
+    }
 }
