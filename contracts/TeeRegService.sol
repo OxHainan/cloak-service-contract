@@ -23,7 +23,7 @@ contract TeeRegService {
         string calldata p2pConnectInfo
     ) external {
         TEENodeInfo storage teeNodeInfo = teeRegMap[peerId];
-        //require(teeNodeInfo.operator == address(0), "TEE registered already");
+        require(teeNodeInfo.operator == address(0), "TEE registered already");
         teeNodeInfo.quoteSize = quoteSize;
         teeNodeInfo.quoteBuf = quoteBuf;
         teeNodeInfo.teePublicKey = teePublicKey;
@@ -35,19 +35,24 @@ contract TeeRegService {
 
     function deleteTEE(string calldata peerId) external {
         TEENodeInfo storage teeNodeInfo = teeRegMap[peerId];
-        require(teeNodeInfo.operator == msg.sender);
+        require(teeNodeInfo.operator == msg.sender, "Permission denied: not operator");
+        for (uint i = 0; i < teeRegList.length; i++) {
+            if (keccak256(abi.encodePacked(teeRegList[i])) == keccak256(abi.encodePacked(peerId))) {
+                teeRegList[i] = teeRegList[teeRegList.length - 1];
+                teeRegList.pop();
+                break;
+            }
+        }
         teeNodeInfo.quoteSize = 0;
         teeNodeInfo.quoteBuf = new bytes(0);
         teeNodeInfo.teePublicKey = "";
         teeNodeInfo.p2pConnectInfo = "";
         teeNodeInfo.quoteState = QuoteState.DEFAULT;
         teeNodeInfo.operator = address(0);
-        teeRegList = new string[](0);
     }
 
     function getQuote(string calldata peerId) external view returns (uint32, bytes memory) {
         TEENodeInfo memory teeNodeInfo = teeRegMap[peerId];
         return (teeNodeInfo.quoteSize, teeNodeInfo.quoteBuf);
     }
-
 }
